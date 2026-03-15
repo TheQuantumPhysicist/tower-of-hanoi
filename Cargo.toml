@@ -1,0 +1,12 @@
+[workspace]
+members = ["hanoi-logic"]
+resolver = "3"
+
+[package]
+name = "hanoi-bevy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hanoi-logic = { path = "hanoi-logic" }
+bevy = "0.18"
