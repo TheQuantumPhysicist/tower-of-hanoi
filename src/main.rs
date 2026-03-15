@@ -483,11 +483,11 @@ fn keyboard_input(
     if auto_solve.active {
         return;
     }
-    let peg = if keys.just_pressed(KeyCode::Digit1) {
+    let peg = if keys.just_pressed(KeyCode::Digit1) || keys.just_pressed(KeyCode::Numpad1) {
         Some(Peg::Left)
-    } else if keys.just_pressed(KeyCode::Digit2) {
+    } else if keys.just_pressed(KeyCode::Digit2) || keys.just_pressed(KeyCode::Numpad2) {
         Some(Peg::Middle)
-    } else if keys.just_pressed(KeyCode::Digit3) {
+    } else if keys.just_pressed(KeyCode::Digit3) || keys.just_pressed(KeyCode::Numpad3) {
         Some(Peg::Right)
     } else {
         None
