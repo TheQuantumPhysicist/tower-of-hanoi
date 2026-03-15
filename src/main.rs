@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 use hanoi_logic::{HanoiGame, Move as HanoiMove, Peg, solve_from_current};
@@ -135,7 +137,9 @@ fn peg_x(peg: Peg) -> f32 {
 }
 
 fn disk_y_on_peg(position_from_bottom: usize) -> f32 {
-    PEG_Y_BASE + BASE_HEIGHT / 2.0 + DISK_HEIGHT / 2.0
+    PEG_Y_BASE
+        + BASE_HEIGHT / 2.0
+        + DISK_HEIGHT / 2.0
         + position_from_bottom as f32 * (DISK_HEIGHT + DISK_GAP)
 }
 
@@ -394,10 +398,7 @@ fn reset_game(
 
 // ── Camera scaling ─────────────────────────────────────────────────────
 
-fn fit_camera(
-    window: Single<&Window>,
-    mut camera_q: Query<&mut Projection, With<Camera2d>>,
-) {
+fn fit_camera(window: Single<&Window>, mut camera_q: Query<&mut Projection, With<Camera2d>>) {
     let Ok(mut projection) = camera_q.single_mut() else {
         return;
     };
@@ -456,14 +457,13 @@ fn keyboard_input(
     }
 
     // Adjust disk count
-    let new_count =
-        if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
-            Some((disk_count.count + 1).min(MAX_DISKS))
-        } else if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) {
-            Some(disk_count.count.saturating_sub(1).max(MIN_DISKS))
-        } else {
-            None
-        };
+    let new_count = if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
+        Some((disk_count.count + 1).min(MAX_DISKS))
+    } else if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) {
+        Some(disk_count.count.saturating_sub(1).max(MIN_DISKS))
+    } else {
+        None
+    };
 
     if let Some(n) = new_count {
         disk_count.count = n;

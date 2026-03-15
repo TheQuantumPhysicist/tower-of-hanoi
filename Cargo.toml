@@ -10,3 +10,6 @@ edition = "2024"
 [dependencies]
 hanoi-logic = { path = "hanoi-logic" }
 bevy = "0.18"
+
+[build-dependencies]
+winres = "0.1"

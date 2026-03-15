@@ -1,3 +1,7 @@
 {
     "editor.formatOnSave": true,
+    "cSpell.words": [
+        "letterboxing",
+        "winres"
+    ],
 }
