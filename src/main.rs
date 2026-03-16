@@ -137,9 +137,7 @@ fn peg_x(peg: Peg) -> f32 {
 }
 
 fn disk_y_on_peg(position_from_bottom: usize) -> f32 {
-    PEG_Y_BASE
-        + BASE_HEIGHT / 2.0
-        + DISK_HEIGHT / 2.0
+    PEG_Y_BASE + BASE_HEIGHT / 2.0 + DISK_HEIGHT / 2.0
         + position_from_bottom as f32 * (DISK_HEIGHT + DISK_GAP)
 }
 
@@ -161,6 +159,14 @@ fn get_world_cursor(
     window
         .cursor_position()
         .and_then(|cp| camera.viewport_to_world_2d(cam_transform, cp).ok())
+}
+
+fn viewport_to_world(
+    pos: Vec2,
+    camera: &Camera,
+    cam_transform: &GlobalTransform,
+) -> Option<Vec2> {
+    camera.viewport_to_world_2d(cam_transform, pos).ok()
 }
 
 /// Find which disk entity is under the cursor (only top disks are draggable).
@@ -219,6 +225,13 @@ fn main() {
                 keyboard_input,
                 mouse_input,
                 drag_move,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                touch_input,
+                touch_drag_move,
                 auto_solve_system,
             ),
         )
@@ -398,7 +411,10 @@ fn reset_game(
 
 // ── Camera scaling ─────────────────────────────────────────────────────
 
-fn fit_camera(window: Single<&Window>, mut camera_q: Query<&mut Projection, With<Camera2d>>) {
+fn fit_camera(
+    window: Single<&Window>,
+    mut camera_q: Query<&mut Projection, With<Camera2d>>,
+) {
     let Ok(mut projection) = camera_q.single_mut() else {
         return;
     };
@@ -457,13 +473,14 @@ fn keyboard_input(
     }
 
     // Adjust disk count
-    let new_count = if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
-        Some((disk_count.count + 1).min(MAX_DISKS))
-    } else if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) {
-        Some(disk_count.count.saturating_sub(1).max(MIN_DISKS))
-    } else {
-        None
-    };
+    let new_count =
+        if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
+            Some((disk_count.count + 1).min(MAX_DISKS))
+        } else if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) {
+            Some(disk_count.count.saturating_sub(1).max(MIN_DISKS))
+        } else {
+            None
+        };
 
     if let Some(n) = new_count {
         disk_count.count = n;
@@ -604,6 +621,107 @@ fn drag_move(
     };
     let (camera, cam_transform) = *camera_q;
     let Some(world_pos) = get_world_cursor(&window, camera, cam_transform) else {
+        return;
+    };
+    if let Ok(mut transform) = transforms.get_mut(info.entity) {
+        transform.translation.x = world_pos.x - info.offset.x;
+        transform.translation.y = world_pos.y - info.offset.y;
+        transform.translation.z = DRAG_Z;
+    }
+}
+
+// ── Touch input ────────────────────────────────────────────────────
+
+fn touch_input(
+    touches: Res<Touches>,
+    camera_q: Single<(&Camera, &GlobalTransform)>,
+    mut game_state: ResMut<GameState>,
+    mut input_state: ResMut<InputState>,
+    mut drag_state: ResMut<DragState>,
+    auto_solve: Res<AutoSolveState>,
+    disk_query: Query<(Entity, &DiskVisual, &Transform)>,
+) {
+    if auto_solve.active {
+        return;
+    }
+
+    let (camera, cam_transform) = *camera_q;
+
+    // ── Touch released: finish drag ──
+    for touch in touches.iter_just_released() {
+        if let Some(info) = drag_state.dragging.take() {
+            let target_peg = viewport_to_world(touch.position(), camera, cam_transform)
+                .and_then(|wp| world_pos_to_peg(wp.x));
+            if let Some(to_peg) = target_peg {
+                if to_peg != info.from_peg {
+                    let _ = game_state.game.make_move(HanoiMove {
+                        from: info.from_peg,
+                        to: to_peg,
+                    });
+                }
+            }
+        }
+        return;
+    }
+
+    // Also handle canceled touches (e.g. interrupted by OS)
+    if touches.any_just_canceled() {
+        drag_state.dragging = None;
+        return;
+    }
+
+    // ── Touch started ──
+    for touch in touches.iter_just_pressed() {
+        let Some(world_pos) = viewport_to_world(touch.position(), camera, cam_transform) else {
+            continue;
+        };
+
+        // If a peg is already selected, second tap completes the move
+        if input_state.selected_peg.is_some() {
+            if let Some(peg) = world_pos_to_peg(world_pos.x) {
+                do_peg_selection(&mut game_state, &mut input_state, peg);
+            }
+            return;
+        }
+
+        // Try to start a drag on a top disk
+        if let Some((entity, disk, from_peg, offset)) =
+            find_top_disk_at(world_pos, &game_state.game, &disk_query)
+        {
+            drag_state.dragging = Some(DragInfo {
+                disk,
+                from_peg,
+                entity,
+                offset,
+            });
+            return;
+        }
+
+        // Tap on a peg area to select it
+        if let Some(peg) = world_pos_to_peg(world_pos.x) {
+            if game_state.game.top_disk(peg).is_some() {
+                input_state.selected_peg = Some(peg);
+            }
+        }
+        return;
+    }
+}
+
+fn touch_drag_move(
+    touches: Res<Touches>,
+    camera_q: Single<(&Camera, &GlobalTransform)>,
+    drag_state: Res<DragState>,
+    mut transforms: Query<&mut Transform>,
+) {
+    let Some(ref info) = drag_state.dragging else {
+        return;
+    };
+    let (camera, cam_transform) = *camera_q;
+    // Use the first active touch for drag position
+    let Some(touch) = touches.iter().next() else {
+        return;
+    };
+    let Some(world_pos) = viewport_to_world(touch.position(), camera, cam_transform) else {
         return;
     };
     if let Ok(mut transform) = transforms.get_mut(info.entity) {
